@@ -1,0 +1,55 @@
+parameters:
+    rss.interfax_url: '%env(RSS_INTERFAX_URL)%'
+    rss.tass_url: '%env(RSS_TASS_URL)%'
+    rss.ria_url: '%env(RSS_RIA_URL)%'
+    rss.prime_url: '%env(RSS_PRIME_URL)%'
+    rss.rbc_url: '%env(RSS_RBC_URL)%'
+    rss.kommersant_url: '%env(RSS_KOMMERSANT_URL)%'
+    log.level: '%env(LOG_LEVEL)%'
+    http.timeout: '%env(int:HTTP_TIMEOUT)%'
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        public: true
+        bind:
+            string $interfaxUrl: '%rss.interfax_url%'
+            string $tassUrl: '%rss.tass_url%'
+            string $riaUrl: '%rss.ria_url%'
+            string $primeUrl: '%rss.prime_url%'
+            string $rbcUrl: '%rss.rbc_url%'
+            string $kommerzantUrl: '%rss.kommersant_url%'
+            string $projectDir: '%kernel.project_dir%'
+
+    News\Skill\:
+        resource: '../src/*'
+        exclude:
+            - '../src/Service/News/Dto/*'
+            - '../src/Component/Rss/Dto/*'
+
+    News\Skill\Command\:
+        resource: '../src/Command/*'
+        tags: ['console.command']
+
+    GuzzleHttp\Client:
+        class: GuzzleHttp\Client
+        arguments:
+            $config:
+                timeout: '%http.timeout%'
+
+    GuzzleHttp\ClientInterface:
+        alias: GuzzleHttp\Client
+
+    Psr\Log\LoggerInterface:
+        class: Monolog\Logger
+        arguments:
+            $name: 'news'
+        calls:
+            - pushHandler: ['@Monolog\Handler\StreamHandler']
+
+    Monolog\Handler\StreamHandler:
+        class: Monolog\Handler\StreamHandler
+        arguments:
+            $stream: 'php://stdout'
+            $level: '%log.level%'
