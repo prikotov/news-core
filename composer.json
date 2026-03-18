@@ -1,5 +1,5 @@
 {
-    "name": "news/cli",
+    "name": "prikotov/news-core",
     "description": "CLI tool for RSS news aggregation - financial news from Russian sources",
     "type": "library",
     "license": "MIT",
