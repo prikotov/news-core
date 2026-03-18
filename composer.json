@@ -1,6 +1,6 @@
 {
-    "name": "news/skill",
-    "description": "PHP console application for RSS news aggregation",
+    "name": "news/cli",
+    "description": "CLI tool for RSS news aggregation - financial news from Russian sources",
     "type": "library",
     "license": "MIT",
     "keywords": ["news", "rss", "aggregator", "cli", "console", "interfax", "tass", "ria", "rbc"],
