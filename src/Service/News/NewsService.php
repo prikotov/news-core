@@ -86,7 +86,16 @@ final class NewsService implements NewsServiceInterface
             return $news;
         }
 
-        return array_values(array_filter($news, function (NewsItemDto $item) use ($searchTerms): bool {
+        $expandedTerms = [];
+        foreach ($searchTerms as $term) {
+            $words = preg_split('/\s+/', $term, -1, PREG_SPLIT_NO_EMPTY);
+            if ($words !== false) {
+                $expandedTerms = array_merge($expandedTerms, $words);
+            }
+        }
+        $expandedTerms = array_values(array_unique($expandedTerms));
+
+        return array_values(array_filter($news, function (NewsItemDto $item) use ($expandedTerms): bool {
             $searchableContent = mb_strtolower(sprintf(
                 '%s %s %s %s',
                 $item->title,
@@ -95,7 +104,7 @@ final class NewsService implements NewsServiceInterface
                 implode(' ', $item->tags),
             ));
 
-            foreach ($searchTerms as $term) {
+            foreach ($expandedTerms as $term) {
                 if (mb_strpos($searchableContent, mb_strtolower($term)) !== false) {
                     return true;
                 }
