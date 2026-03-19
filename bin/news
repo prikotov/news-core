@@ -16,7 +16,7 @@ $container = require __DIR__ . '/../config/container.php';
 $application = new Application('News Skill', '1.0.0');
 
 foreach ($container->findTaggedServiceIds('console.command') as $id => $tags) {
-    $application->addCommand($container->get($id));
+    $application->add($container->get($id));
 }
 
 exit($application->run());
