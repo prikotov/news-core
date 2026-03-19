@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace News\Skill\Exception;
+namespace News\Core\Exception;
 
 interface InfrastructureExceptionInterface
 {

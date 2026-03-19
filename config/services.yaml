@@ -22,13 +22,13 @@ services:
             string $kommerzantUrl: '%rss.kommersant_url%'
             string $projectDir: '%kernel.project_dir%'
 
-    News\Skill\:
+    News\Core\:
         resource: '../src/*'
         exclude:
             - '../src/Service/News/Dto/*'
             - '../src/Component/Rss/Dto/*'
 
-    News\Skill\Command\:
+    News\Core\Command\:
         resource: '../src/Command/*'
         tags: ['console.command']
 

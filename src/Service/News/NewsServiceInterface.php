@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace News\Skill\Service\News;
+namespace News\Core\Service\News;
 
-use News\Skill\Service\News\Dto\NewsItemDto;
+use News\Core\Service\News\Dto\NewsItemDto;
 
 interface NewsServiceInterface
 {

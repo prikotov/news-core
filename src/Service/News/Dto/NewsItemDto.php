@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace News\Skill\Service\News\Dto;
+namespace News\Core\Service\News\Dto;
 
 final readonly class NewsItemDto
 {

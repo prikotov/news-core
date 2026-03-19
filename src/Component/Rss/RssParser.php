@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace News\Skill\Component\Rss;
+namespace News\Core\Component\Rss;
 
 use DateTimeImmutable;
 use GuzzleHttp\ClientInterface;
-use News\Skill\Component\Rss\Dto\RssFeedDto;
-use News\Skill\Component\Rss\Dto\RssItemDto;
-use News\Skill\Exception\InfrastructureException;
+use News\Core\Component\Rss\Dto\RssFeedDto;
+use News\Core\Component\Rss\Dto\RssItemDto;
+use News\Core\Exception\InfrastructureException;
 use Override;
 use Psr\Log\LoggerInterface;
 use SimpleXMLElement;
