@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace News\Skill\Command;
+namespace News\Core\Command;
 
-use News\Skill\Service\Cache\CacheServiceInterface;
-use News\Skill\Service\News\NewsServiceInterface;
+use News\Core\Service\Cache\CacheServiceInterface;
+use News\Core\Service\News\NewsServiceInterface;
 use Override;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;

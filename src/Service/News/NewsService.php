@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace News\Skill\Service\News;
+namespace News\Core\Service\News;
 
 use DateTimeImmutable;
-use News\Skill\Component\Rss\RssParserInterface;
-use News\Skill\Service\News\Dto\NewsItemDto;
+use News\Core\Component\Rss\RssParserInterface;
+use News\Core\Service\News\Dto\NewsItemDto;
 use Override;
 use Psr\Log\LoggerInterface;
 

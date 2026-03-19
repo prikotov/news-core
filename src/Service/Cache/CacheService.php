@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace News\Skill\Service\Cache;
+namespace News\Core\Service\Cache;
 
 use DateTimeImmutable;
-use News\Skill\Service\News\Dto\NewsItemDto;
+use News\Core\Service\News\Dto\NewsItemDto;
 use Override;
 use Psr\Log\LoggerInterface;
 

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace News\Skill\Command;
+namespace News\Core\Command;
 
 use Override;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -19,7 +19,7 @@ final class MainCommand extends Command
     #[Override]
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $output->writeln('<info>News Skill - RSS News Aggregator</info>');
+        $output->writeln('<info>News Core - RSS News Aggregator</info>');
         $output->writeln('');
         $output->writeln('Available commands:');
         $output->writeln('  <comment>news:fetch</comment>  Fetch news from all sources');

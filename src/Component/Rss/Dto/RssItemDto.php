@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace News\Skill\Component\Rss\Dto;
+namespace News\Core\Component\Rss\Dto;
 
 final readonly class RssItemDto
 {

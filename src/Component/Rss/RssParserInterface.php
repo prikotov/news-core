@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace News\Skill\Component\Rss;
+namespace News\Core\Component\Rss;
 
-use News\Skill\Component\Rss\Dto\RssFeedDto;
+use News\Core\Component\Rss\Dto\RssFeedDto;
 
 interface RssParserInterface
 {

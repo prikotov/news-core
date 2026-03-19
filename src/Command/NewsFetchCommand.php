@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace News\Skill\Command;
+namespace News\Core\Command;
 
-use News\Skill\Service\News\Dto\NewsItemDto;
-use News\Skill\Service\News\NewsServiceInterface;
+use News\Core\Service\News\Dto\NewsItemDto;
+use News\Core\Service\News\NewsServiceInterface;
 use Override;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -192,7 +192,7 @@ final class NewsFetchCommand extends Command
      */
     private function outputJson(OutputInterface $output, array $news): int
     {
-    $data = array_map(fn(NewsItemDto $item): array => [
+        $data = array_map(fn(NewsItemDto $item): array => [
             'title' => $item->title,
             'link' => $item->link,
             'description' => $item->description,
