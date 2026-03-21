@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace News\Core\Command;
 
+use News\Core\Helper\OutputFormatTrait;
 use News\Core\Service\News\Dto\NewsItemDto;
 use News\Core\Service\News\NewsServiceInterface;
 use Override;
@@ -21,6 +22,8 @@ use Symfony\Component\Console\Output\OutputInterface;
 )]
 final class NewsFetchCommand extends Command
 {
+    use OutputFormatTrait;
+
     public function __construct(
         private readonly NewsServiceInterface $newsService,
         private readonly LoggerInterface $logger,
@@ -45,12 +48,6 @@ final class NewsFetchCommand extends Command
                 'Search terms to filter news (e.g., --search "Сбербанк" --search "нефть")',
             )
             ->addOption(
-                'ticker',
-                't',
-                InputOption::VALUE_IS_ARRAY | InputOption::VALUE_OPTIONAL,
-                'Stock tickers to search (e.g., --ticker SBER --ticker GAZP)',
-            )
-            ->addOption(
                 'category',
                 'c',
                 InputOption::VALUE_IS_ARRAY | InputOption::VALUE_OPTIONAL,
@@ -67,8 +64,8 @@ final class NewsFetchCommand extends Command
                 'format',
                 'f',
                 InputOption::VALUE_OPTIONAL,
-                'Output format: table, json, simple',
-                'table',
+                'Output format: text, json, csv, md',
+                'md',
             );
     }
 
@@ -79,30 +76,27 @@ final class NewsFetchCommand extends Command
         $sources = $input->getOption('source');
         /** @var list<string> $searchTerms */
         $searchTerms = $input->getOption('search');
-        /** @var list<string> $tickers */
-        $tickers = $input->getOption('ticker');
         /** @var list<string> $categories */
         $categories = $input->getOption('category');
         /** @var mixed $limitValue */
         $limitValue = $input->getOption('limit');
         $limit = is_numeric($limitValue) ? (int)$limitValue : 50;
-        /** @var mixed $formatValue */
-        $formatValue = $input->getOption('format');
-        $format = is_string($formatValue) ? $formatValue : 'table';
+        $format = $this->getFormat($input);
 
-        $hasFilters = !empty($searchTerms) || !empty($tickers) || !empty($categories);
+        $hasFilters = !empty($searchTerms) || !empty($categories);
 
         $news = $this->newsService->fetchNews($sources);
 
         if ($news === []) {
             $this->logger->warning('No news fetched from sources', ['sources' => $sources ?: 'all']);
             if ($format === 'json') {
-                $output->writeln(json_encode([
+                $json = json_encode([
                     'items' => [],
                     'total' => 0,
                     'reason' => 'no_data_from_sources',
                     'message' => 'Failed to fetch news from RSS sources',
-                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+                $output->writeln($json ?: '{}');
                 return Command::SUCCESS;
             }
             $output->writeln('<error>No news fetched from RSS sources. Check network connection or source availability.</error>');
@@ -110,11 +104,10 @@ final class NewsFetchCommand extends Command
         }
 
         $allNewsCount = count($news);
-        $allSearchTerms = array_merge($searchTerms, $this->expandTickers($tickers));
 
-        if (!empty($allSearchTerms)) {
-            $news = $this->newsService->filterNews($news, $allSearchTerms);
-            $output->writeln(sprintf('<comment>Filtering by: %s</comment>', implode(', ', $allSearchTerms)));
+        if (!empty($searchTerms)) {
+            $news = $this->newsService->filterNews($news, $searchTerms);
+            $output->writeln(sprintf('<comment>Filtering by: %s</comment>', implode(', ', $searchTerms)));
             $output->writeln('');
         }
 
@@ -126,23 +119,24 @@ final class NewsFetchCommand extends Command
 
         if ($news === [] && $hasFilters) {
             $this->logger->info('No news matched filters', [
-                'searchTerms' => $allSearchTerms,
+                'searchTerms' => $searchTerms,
                 'categories' => $categories,
                 'totalFetched' => $allNewsCount,
             ]);
 
             if ($format === 'json') {
-                $output->writeln(json_encode([
+                $json = json_encode([
                     'items' => [],
                     'total' => 0,
                     'reason' => 'no_matches',
                     'message' => 'No news matched the specified filters',
                     'filters' => [
-                        'searchTerms' => $allSearchTerms,
+                        'searchTerms' => $searchTerms,
                         'categories' => $categories,
                     ],
                     'totalFetched' => $allNewsCount,
-                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+                $output->writeln($json ?: '{}');
                 return Command::SUCCESS;
             }
 
@@ -157,58 +151,28 @@ final class NewsFetchCommand extends Command
             $news = array_slice($news, 0, $limit);
         }
 
-        return match ($format) {
-            'json' => $this->outputJson($output, $news),
-            'simple' => $this->outputSimple($output, $news),
-            default => $this->outputTable($output, $news),
-        };
-    }
+        if ($format === 'csv' || $format === 'md') {
+            $rows = array_map(fn(NewsItemDto $item) => [
+                $item->pubDate,
+                $item->source,
+                implode(', ', $item->categories) ?: '-',
+                $this->truncate($item->title, 100),
+                $item->link,
+            ], $news);
 
-    /**
-     * @param list<string> $tickers
-     * @return list<string>
-     */
-    private function expandTickers(array $tickers): array
-    {
-        $tickerNames = [
-            'SBER' => ['Сбербанк', 'Sber', 'SBER'],
-            'GAZP' => ['Газпром', 'Gazprom', 'GAZP'],
-            'LKOH' => ['Лукойл', 'Lukoil', 'LKOH'],
-            'NVTK' => ['Новатэк', 'Novatek', 'NVTK'],
-            'ROSN' => ['Роснефть', 'Rosneft', 'ROSN'],
-            'GMKN' => ['Норникель', 'Nornickel', 'GMKN', 'Норильский никель'],
-            'MGNT' => ['Магнит', 'Magnit', 'MGNT'],
-            'YNDX' => ['Яндекс', 'Yandex', 'YNDX'],
-            'AFKS' => ['АФК Система', 'Sistema', 'AFKS'],
-            'AFLT' => ['Аэрофлот', 'Aeroflot', 'AFLT'],
-            'ALRS' => ['Алроса', 'Alrosa', 'ALRS'],
-            'CHMF' => ['Северсталь', 'Severstal', 'CHMF'],
-            'FEES' => ['ФСК ЕЭС', 'Federal Grid', 'FEES'],
-            'MOEX' => ['Мосбиржа', 'Moscow Exchange', 'MOEX'],
-            'MTSS' => ['МТС', 'MTS', 'MTSS'],
-            'PLZL' => ['Полюс', 'Polyus', 'PLZL'],
-            'TATN' => ['Татнефть', 'Tatneft', 'TATN'],
-            'VTBR' => ['ВТБ', 'VTB', 'VTBR'],
-            'POLY' => ['Polymetal', 'Polymetal', 'POLY'],
-            'NLMK' => ['НЛМК', 'NLMK', 'Новолипецкий металлургический'],
-            'TCSG' => ['Т-Банк', 'Тинькофф', 'Tinkoff', 'TCSG'],
-            'PHOR' => ['ФосАгро', 'PhosAgro', 'PHOR'],
-            'MAGN' => ['ММК', 'Magnitogorsk', 'MAGN'],
-            'PIKK' => ['ПИК', 'PIK', 'PIKK'],
-            'RTKM' => ['Ростелеком', 'Rostelecom', 'RTKM'],
-        ];
-
-        $expanded = [];
-        foreach ($tickers as $ticker) {
-            $upperTicker = strtoupper($ticker);
-            if (isset($tickerNames[$upperTicker])) {
-                $expanded = array_merge($expanded, $tickerNames[$upperTicker]);
-            } else {
-                $expanded[] = $ticker;
-            }
+            return $this->outputFormat(
+                $output,
+                $format,
+                ['Date', 'Source', 'Category', 'Title', 'Link'],
+                $rows,
+                'News'
+            );
         }
 
-        return array_values(array_unique($expanded));
+        return match ($format) {
+            'json' => $this->outputJson($output, $news),
+            default => $this->outputTable($output, $news),
+        };
     }
 
     /**
@@ -256,25 +220,6 @@ final class NewsFetchCommand extends Command
             'items' => $data,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         $output->writeln($json !== false ? $json : '[]');
-
-        return Command::SUCCESS;
-    }
-
-    /**
-     * @param list<NewsItemDto> $news
-     */
-    private function outputSimple(OutputInterface $output, array $news): int
-    {
-        foreach ($news as $item) {
-            $output->writeln(sprintf(
-                '<info>[%s]</info> <comment>%s</comment> %s',
-                $item->pubDate,
-                $item->source,
-                $item->title,
-            ));
-            $output->writeln(sprintf('  %s', $item->link));
-            $output->writeln('');
-        }
 
         return Command::SUCCESS;
     }

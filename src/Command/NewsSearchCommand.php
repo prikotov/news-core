@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace News\Core\Command;
 
+use News\Core\Helper\OutputFormatTrait;
 use News\Core\Service\Cache\CacheServiceInterface;
 use News\Core\Service\News\Dto\NewsItemDto;
 use Override;
@@ -21,6 +22,8 @@ use Symfony\Component\Console\Output\OutputInterface;
 )]
 final class NewsSearchCommand extends Command
 {
+    use OutputFormatTrait;
+
     public function __construct(
         private readonly CacheServiceInterface $cacheService,
     ) {
@@ -66,8 +69,8 @@ final class NewsSearchCommand extends Command
                 'format',
                 'f',
                 InputOption::VALUE_OPTIONAL,
-                'Output format: table, json, simple',
-                'table',
+                'Output format: text, json, csv, md',
+                'md',
             );
     }
 
@@ -86,9 +89,7 @@ final class NewsSearchCommand extends Command
         /** @var mixed $limitValue */
         $limitValue = $input->getOption('limit');
         $limit = is_numeric($limitValue) ? (int)$limitValue : 50;
-        /** @var mixed $formatValue */
-        $formatValue = $input->getOption('format');
-        $format = is_string($formatValue) ? $formatValue : 'table';
+        $format = $this->getFormat($input);
 
         $results = $this->cacheService->search($queryTerms, $sources, $daysBack);
 
@@ -105,9 +106,26 @@ final class NewsSearchCommand extends Command
             $output->writeln('');
         }
 
+        if ($format === 'csv' || $format === 'md') {
+            $rows = array_map(fn(NewsItemDto $item) => [
+                $item->pubDate,
+                $item->source,
+                implode(', ', $item->categories) ?: '-',
+                $this->truncate($item->title, 100),
+                $item->link,
+            ], $results);
+
+            return $this->outputFormat(
+                $output,
+                $format,
+                ['Date', 'Source', 'Category', 'Title', 'Link'],
+                $rows,
+                'Search Results'
+            );
+        }
+
         return match ($format) {
             'json' => $this->outputJson($output, $results),
-            'simple' => $this->outputSimple($output, $results),
             default => $this->outputTable($output, $results),
         };
     }
@@ -178,25 +196,6 @@ final class NewsSearchCommand extends Command
 
         $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         $output->writeln($json !== false ? $json : '[]');
-
-        return Command::SUCCESS;
-    }
-
-    /**
-     * @param list<NewsItemDto> $news
-     */
-    private function outputSimple(OutputInterface $output, array $news): int
-    {
-        foreach ($news as $item) {
-            $output->writeln(sprintf(
-                '<info>[%s]</info> <comment>%s</comment> %s',
-                $item->pubDate,
-                $item->source,
-                $item->title,
-            ));
-            $output->writeln(sprintf('  %s', $item->link));
-            $output->writeln('');
-        }
 
         return Command::SUCCESS;
     }
