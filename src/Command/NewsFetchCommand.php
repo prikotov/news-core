@@ -7,6 +7,7 @@ namespace News\Core\Command;
 use News\Core\Service\News\Dto\NewsItemDto;
 use News\Core\Service\News\NewsServiceInterface;
 use Override;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
@@ -22,6 +23,7 @@ final class NewsFetchCommand extends Command
 {
     public function __construct(
         private readonly NewsServiceInterface $newsService,
+        private readonly LoggerInterface $logger,
     ) {
         parent::__construct();
     }
@@ -88,8 +90,26 @@ final class NewsFetchCommand extends Command
         $formatValue = $input->getOption('format');
         $format = is_string($formatValue) ? $formatValue : 'table';
 
+        $hasFilters = !empty($searchTerms) || !empty($tickers) || !empty($categories);
+
         $news = $this->newsService->fetchNews($sources);
 
+        if ($news === []) {
+            $this->logger->warning('No news fetched from sources', ['sources' => $sources ?: 'all']);
+            if ($format === 'json') {
+                $output->writeln(json_encode([
+                    'items' => [],
+                    'total' => 0,
+                    'reason' => 'no_data_from_sources',
+                    'message' => 'Failed to fetch news from RSS sources',
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                return Command::SUCCESS;
+            }
+            $output->writeln('<error>No news fetched from RSS sources. Check network connection or source availability.</error>');
+            return Command::SUCCESS;
+        }
+
+        $allNewsCount = count($news);
         $allSearchTerms = array_merge($searchTerms, $this->expandTickers($tickers));
 
         if (!empty($allSearchTerms)) {
@@ -102,6 +122,35 @@ final class NewsFetchCommand extends Command
             $news = $this->newsService->filterByCategories($news, $categories);
             $output->writeln(sprintf('<comment>Filtering by categories: %s</comment>', implode(', ', $categories)));
             $output->writeln('');
+        }
+
+        if ($news === [] && $hasFilters) {
+            $this->logger->info('No news matched filters', [
+                'searchTerms' => $allSearchTerms,
+                'categories' => $categories,
+                'totalFetched' => $allNewsCount,
+            ]);
+
+            if ($format === 'json') {
+                $output->writeln(json_encode([
+                    'items' => [],
+                    'total' => 0,
+                    'reason' => 'no_matches',
+                    'message' => 'No news matched the specified filters',
+                    'filters' => [
+                        'searchTerms' => $allSearchTerms,
+                        'categories' => $categories,
+                    ],
+                    'totalFetched' => $allNewsCount,
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                return Command::SUCCESS;
+            }
+
+            $output->writeln(sprintf(
+                '<comment>No news matched filters (searched %d items)</comment>',
+                $allNewsCount
+            ));
+            return Command::SUCCESS;
         }
 
         if ($limit > 0) {
@@ -202,7 +251,10 @@ final class NewsFetchCommand extends Command
             'tags' => $item->tags,
         ], $news);
 
-        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        $json = json_encode([
+            'total' => count($news),
+            'items' => $data,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         $output->writeln($json !== false ? $json : '[]');
 
         return Command::SUCCESS;
