@@ -1,7 +1,7 @@
 /.env.local
 /vendor/
 /var/
-/cache/
+/data/
 /.phpunit.result.cache
 /phpstan.neon.cache
 /.psalm/
