@@ -19,6 +19,11 @@ final class CacheService implements CacheServiceInterface
     ) {
     }
 
+    public function getSourceBaseDir(string $source): string
+    {
+        return $this->getCacheDir() . '/' . $source;
+    }
+
     public function store(array $news): int
     {
         $stored = 0;
@@ -30,27 +35,27 @@ final class CacheService implements CacheServiceInterface
                 $date = new DateTimeImmutable();
             }
 
-            $sourceDir = $this->getSourceDir($date, $item->source);
-            if (!is_dir($sourceDir)) {
-                mkdir($sourceDir, 0755, true);
+            $sourceDateDir = $this->getSourceDateDir($item->source, $date);
+            if (!is_dir($sourceDateDir)) {
+                mkdir($sourceDateDir, 0755, true);
             }
 
             $id = $this->generateId($item);
             $baseFilename = $date->format('Ymd-His') . '-' . $id;
 
-            $existingFiles = glob($sourceDir . '/*-' . $id . '.json');
-            if ($existingFiles !== [] && $this->isDuplicate($item, $sourceDir, $id)) {
+            $existingFiles = glob($sourceDateDir . '/*-' . $id . '.json');
+            if ($existingFiles !== [] && $this->isDuplicate($item, $sourceDateDir, $id)) {
                 $duplicates++;
                 continue;
             }
 
-            if ($this->isSimilarExists($item, $sourceDir)) {
+            if ($this->isSimilarExists($item, $sourceDateDir)) {
                 $duplicates++;
                 continue;
             }
 
-            $metaPath = $sourceDir . '/' . $baseFilename . '.json';
-            $textPath = $sourceDir . '/' . $baseFilename . '.txt';
+            $metaPath = $sourceDateDir . '/' . $baseFilename . '.json';
+            $textPath = $sourceDateDir . '/' . $baseFilename . '.txt';
 
             $meta = [
                 'id' => $id,
@@ -78,25 +83,34 @@ final class CacheService implements CacheServiceInterface
     public function getByDate(DateTimeImmutable $date, array $sources = []): array
     {
         $news = [];
-        $baseDir = $this->getCacheDir() . '/' . $date->format('Y/m/d');
+        $cacheDir = $this->getCacheDir();
 
-        if (!is_dir($baseDir)) {
+        if (!is_dir($cacheDir)) {
             return [];
         }
 
-        $sourceDirs = $sources === [] ? (glob($baseDir . '/*', GLOB_ONLYDIR) ?: []) : [];
+        $sourceDirs = $sources === []
+            ? (glob($cacheDir . '/*', GLOB_ONLYDIR) ?: [])
+            : [];
 
         if ($sources !== []) {
             foreach ($sources as $source) {
-                $dir = $baseDir . '/' . $source;
+                $dir = $this->getSourceBaseDir($source);
                 if (is_dir($dir)) {
                     $sourceDirs[] = $dir;
                 }
             }
         }
 
+        $dateStr = $date->format('Y/m/d');
+
         foreach ($sourceDirs as $sourceDir) {
-            $metaFiles = glob($sourceDir . '/*.json');
+            $dateDir = $sourceDir . '/' . $dateStr;
+            if (!is_dir($dateDir)) {
+                continue;
+            }
+
+            $metaFiles = glob($dateDir . '/*.json');
             if ($metaFiles === false) {
                 continue;
             }
@@ -172,41 +186,41 @@ final class CacheService implements CacheServiceInterface
             return $stats;
         }
 
-        $years = glob($cacheDir . '/*', GLOB_ONLYDIR);
-        if ($years === false) {
+        $sourceDirs = glob($cacheDir . '/*', GLOB_ONLYDIR);
+        if ($sourceDirs === false) {
             return $stats;
         }
 
-        foreach ($years as $yearDir) {
-            $months = glob($yearDir . '/*', GLOB_ONLYDIR);
-            if ($months === false) {
+        foreach ($sourceDirs as $sourceDir) {
+            $source = basename($sourceDir);
+            $yearDirs = glob($sourceDir . '/*', GLOB_ONLYDIR);
+            if ($yearDirs === false) {
                 continue;
             }
 
-            foreach ($months as $monthDir) {
-                $days = glob($monthDir . '/*', GLOB_ONLYDIR);
-                if ($days === false) {
+            foreach ($yearDirs as $yearDir) {
+                $monthDirs = glob($yearDir . '/*', GLOB_ONLYDIR);
+                if ($monthDirs === false) {
                     continue;
                 }
 
-                foreach ($days as $dayDir) {
-                    $sources = glob($dayDir . '/*', GLOB_ONLYDIR);
-                    if ($sources === false) {
+                foreach ($monthDirs as $monthDir) {
+                    $dayDirs = glob($monthDir . '/*', GLOB_ONLYDIR);
+                    if ($dayDirs === false) {
                         continue;
                     }
 
-                    foreach ($sources as $sourceDir) {
-                        $files = glob($sourceDir . '/*.json');
+                    foreach ($dayDirs as $dayDir) {
+                        $files = glob($dayDir . '/*.json');
                         $count = $files !== false ? count($files) : 0;
 
-                        $date = basename($dayDir);
+                        $day = basename($dayDir);
                         $month = basename($monthDir);
                         $year = basename($yearDir);
-                        $source = basename($sourceDir);
-                        $key = $year . '-' . $month . '-' . $date . '/' . $source;
+                        $key = $year . '-' . $month . '-' . $day . '/' . $source;
 
                         $stats[$key] = [
-                            'date' => $year . '-' . $month . '-' . $date,
+                            'date' => $year . '-' . $month . '-' . $day,
                             'source' => $source,
                             'count' => $count,
                         ];
@@ -230,28 +244,35 @@ final class CacheService implements CacheServiceInterface
             return 0;
         }
 
-        $years = glob($cacheDir . '/*', GLOB_ONLYDIR);
-        if ($years === false) {
+        $sourceDirs = glob($cacheDir . '/*', GLOB_ONLYDIR);
+        if ($sourceDirs === false) {
             return 0;
         }
 
-        foreach ($years as $yearDir) {
-            $months = glob($yearDir . '/*', GLOB_ONLYDIR);
-            if ($months === false) {
+        foreach ($sourceDirs as $sourceDir) {
+            $yearDirs = glob($sourceDir . '/*', GLOB_ONLYDIR);
+            if ($yearDirs === false) {
                 continue;
             }
 
-            foreach ($months as $monthDir) {
-                $days = glob($monthDir . '/*', GLOB_ONLYDIR);
-                if ($days === false) {
+            foreach ($yearDirs as $yearDir) {
+                $monthDirs = glob($yearDir . '/*', GLOB_ONLYDIR);
+                if ($monthDirs === false) {
                     continue;
                 }
 
-                foreach ($days as $dayDir) {
-                    $dirDate = $this->extractDateFromPath($dayDir);
+                foreach ($monthDirs as $monthDir) {
+                    $dayDirs = glob($monthDir . '/*', GLOB_ONLYDIR);
+                    if ($dayDirs === false) {
+                        continue;
+                    }
 
-                    if ($dirDate !== null && $dirDate < $cutoffDate) {
-                        $deleted += $this->removeDirectory($dayDir);
+                    foreach ($dayDirs as $dayDir) {
+                        $dirDate = $this->extractDateFromPath($dayDir);
+
+                        if ($dirDate !== null && $dirDate < $cutoffDate) {
+                            $deleted += $this->removeDirectory($dayDir);
+                        }
                     }
                 }
             }
@@ -267,9 +288,9 @@ final class CacheService implements CacheServiceInterface
         return $this->projectDir . '/' . self::CACHE_DIR;
     }
 
-    private function getSourceDir(DateTimeImmutable $date, string $source): string
+    private function getSourceDateDir(string $source, DateTimeImmutable $date): string
     {
-        return $this->getCacheDir() . '/' . $date->format('Y/m/d') . '/' . $source;
+        return $this->getSourceBaseDir($source) . '/' . $date->format('Y/m/d');
     }
 
     private function generateId(NewsItemDto $item): string
@@ -356,18 +377,18 @@ final class CacheService implements CacheServiceInterface
         return $distance;
     }
 
-    private function isDuplicate(NewsItemDto $item, string $sourceDir, string $id): bool
+    private function isDuplicate(NewsItemDto $item, string $sourceDateDir, string $id): bool
     {
-        $existingFiles = glob($sourceDir . '/*-' . $id . '.json');
+        $existingFiles = glob($sourceDateDir . '/*-' . $id . '.json');
         return $existingFiles !== [];
     }
 
-    private function isSimilarExists(NewsItemDto $item, string $sourceDir): bool
+    private function isSimilarExists(NewsItemDto $item, string $sourceDateDir): bool
     {
         $newSimhash = $this->calculateSimhash($item->title . ' ' . $item->description);
         $newTitleNorm = $this->normalizeText($item->title);
 
-        $metaFiles = glob($sourceDir . '/*.json');
+        $metaFiles = glob($sourceDateDir . '/*.json');
         if ($metaFiles === false) {
             return false;
         }
@@ -458,14 +479,16 @@ final class CacheService implements CacheServiceInterface
             foreach ($files as $file) {
                 if (is_dir($file)) {
                     $count += $this->removeDirectory($file);
-                } else {
+                } elseif (basename($file) !== 'fetch-meta.json') {
                     unlink($file);
                     $count++;
                 }
             }
         }
 
-        rmdir($dir);
+        if ($count > 0) {
+            rmdir($dir);
+        }
 
         return $count;
     }

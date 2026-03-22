@@ -9,8 +9,9 @@ use Psr\Log\LoggerInterface;
 
 final class FetchMetaService
 {
-    private const META_DIR = 'data/news-rss/cache/fetch-meta';
+    private const META_FILENAME = 'fetch-meta.json';
     private const TTL_SECONDS = 600;
+    private const CACHE_DIR = 'data/news-rss/cache';
 
     public function __construct(
         private readonly LoggerInterface $logger,
@@ -79,6 +80,6 @@ final class FetchMetaService
 
     private function getMetaFilePath(string $source): string
     {
-        return $this->projectDir . '/' . self::META_DIR . '/' . $source . '.json';
+        return $this->projectDir . '/' . self::CACHE_DIR . '/' . $source . '/' . self::META_FILENAME;
     }
 }
