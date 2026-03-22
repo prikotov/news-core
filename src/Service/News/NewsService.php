@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace News\Core\Service\News;
 
-use DateTimeImmutable;
 use News\Core\Component\Rss\RssParserInterface;
+use News\Core\Service\Cache\FetchMetaService;
 use News\Core\Service\News\Dto\NewsItemDto;
 use Override;
 use Psr\Log\LoggerInterface;
@@ -23,6 +23,7 @@ final class NewsService implements NewsServiceInterface
 
     public function __construct(
         private readonly RssParserInterface $rssParser,
+        private readonly FetchMetaService $fetchMetaService,
         private readonly LoggerInterface $logger,
         private readonly string $interfaxUrl,
         private readonly string $tassUrl,
@@ -46,8 +47,15 @@ final class NewsService implements NewsServiceInterface
         $allNews = [];
 
         foreach ($urls as $source => $url) {
+            if (!$this->fetchMetaService->needsFetch($source)) {
+                $this->logger->debug('Skipping source due to TTL', ['source' => $source]);
+                continue;
+            }
+
             try {
                 $feed = $this->rssParser->fetchFeed($url, self::SOURCES[$source] ?? $source);
+                $this->fetchMetaService->markFetched($source);
+
                 $this->logger->info('Fetched news from source', [
                     'source' => $source,
                     'count' => count($feed->items),

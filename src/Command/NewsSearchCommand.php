@@ -19,11 +19,13 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 #[AsCommand(
     name: 'news:search',
-    description: 'Fetch news from RSS, cache and search',
+    description: 'Search news in cache',
 )]
 final class NewsSearchCommand extends Command
 {
     use OutputFormatTrait;
+
+    private const DEFAULT_DAYS_BACK = 7;
 
     public function __construct(
         private readonly NewsServiceInterface $newsService,
@@ -54,13 +56,6 @@ final class NewsSearchCommand extends Command
                 'Filter by categories',
             )
             ->addOption(
-                'days',
-                'd',
-                InputOption::VALUE_OPTIONAL,
-                'Number of days to search back',
-                7,
-            )
-            ->addOption(
                 'limit',
                 'l',
                 InputOption::VALUE_OPTIONAL,
@@ -85,9 +80,6 @@ final class NewsSearchCommand extends Command
         $sources = $input->getOption('source');
         /** @var list<string> $categories */
         $categories = $input->getOption('category');
-        /** @var mixed $daysValue */
-        $daysValue = $input->getOption('days');
-        $daysBack = is_numeric($daysValue) ? (int)$daysValue : 7;
         /** @var mixed $limitValue */
         $limitValue = $input->getOption('limit');
         $limit = is_numeric($limitValue) ? (int)$limitValue : 50;
@@ -98,7 +90,7 @@ final class NewsSearchCommand extends Command
             $this->cacheService->store($news);
         }
 
-        $results = $this->cacheService->search($queryTerms, $sources, $daysBack);
+        $results = $this->cacheService->search($queryTerms, $sources, self::DEFAULT_DAYS_BACK);
 
         if ($categories !== []) {
             $results = $this->filterByCategories($results, $categories);
