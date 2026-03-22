@@ -74,6 +74,7 @@ trait OutputFormatTrait
     {
         $data = array_map(function (array $row) use ($headers): array {
             $item = [];
+            /** @var int $i */
             foreach ($headers as $i => $header) {
                 $item[$header] = $row[$i] ?? null;
             }
@@ -106,11 +107,10 @@ trait OutputFormatTrait
      */
     private function csvRow(array $row): string
     {
-        return implode(',', array_map(function ($cell): string {
+        return implode(',', array_map(function (string|null $cell): string {
             if ($cell === null) {
                 return '';
             }
-            $cell = (string)$cell;
             if (str_contains($cell, ',') || str_contains($cell, '"') || str_contains($cell, "\n")) {
                 return '"' . str_replace('"', '""', $cell) . '"';
             }
@@ -133,8 +133,8 @@ trait OutputFormatTrait
         $output->writeln('| ' . implode(' | ', array_fill(0, count($headers), '---')) . ' |');
 
         foreach ($rows as $row) {
-            $cells = array_map(function ($v): string {
-                return $v === null ? '' : (string)$v;
+            $cells = array_map(function (string|null $v): string {
+                return $v ?? '';
             }, $row);
             $output->writeln('| ' . implode(' | ', $cells) . ' |');
         }
