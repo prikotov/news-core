@@ -15,6 +15,8 @@ final class CacheService implements CacheServiceInterface
 
     public function __construct(
         private readonly LoggerInterface $logger,
+        private readonly DeduplicationServiceInterface $deduplicationService,
+        private readonly TextHasher $textHasher,
         private readonly string $projectDir,
     ) {
     }
@@ -48,8 +50,8 @@ final class CacheService implements CacheServiceInterface
             $meta = [
                 'id' => $id,
                 'title' => $item->title,
-                'title_norm' => $this->normalizeText($item->title),
-                'simhash' => $this->calculateSimhash($item->title . ' ' . $item->description),
+                'title_norm' => $this->textHasher->normalizeText($item->title),
+                'simhash' => $this->textHasher->calculateSimhash($item->title . ' ' . $item->description),
                 'link' => $item->link,
                 'source' => $item->source,
                 'pubDate' => $item->pubDate,
@@ -164,7 +166,7 @@ final class CacheService implements CacheServiceInterface
 
         usort($results, fn($a, $b) => strcmp($b->pubDate, $a->pubDate));
 
-        return $this->deduplicate($results);
+        return $this->deduplicationService->deduplicate($results);
     }
 
     public function getCacheStats(): array
@@ -288,85 +290,6 @@ final class CacheService implements CacheServiceInterface
         return substr(md5($item->link), 0, 8);
     }
 
-    private function normalizeText(string $text): string
-    {
-        $text = mb_strtolower($text, 'UTF-8');
-        $text = preg_replace('/[^\p{L}\p{N}\s]/u', '', $text) ?? '';
-        $text = preg_replace('/\s+/', ' ', $text) ?? '';
-        return trim($text);
-    }
-
-    private function calculateSimhash(string $text): string
-    {
-        $normalized = $this->normalizeText($text);
-        $shingles = $this->getShingles($normalized, 3);
-
-        if ($shingles === []) {
-            return '0';
-        }
-
-        $v = array_fill(0, 64, 0);
-
-        foreach ($shingles as $shingle) {
-            $hash = md5($shingle, true);
-            $bits = unpack('N*', $hash);
-
-            for ($i = 0; $i < 64; $i++) {
-                $byteIndex = (int)floor($i / 8);
-                $bitIndex = $i % 8;
-                $byte = $bits[$byteIndex + 1] ?? 0;
-                $bit = ($byte >> (7 - $bitIndex)) & 1;
-                $v[$i] += $bit === 1 ? 1 : -1;
-            }
-        }
-
-        $simhash = 0;
-        for ($i = 0; $i < 64; $i++) {
-            if ($v[$i] > 0) {
-                $simhash |= (1 << (63 - $i));
-            }
-        }
-
-        return (string)$simhash;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function getShingles(string $text, int $k): array
-    {
-        $words = preg_split('/\s+/', $text);
-        if ($words === false || count($words) < $k) {
-            return [$text];
-        }
-
-        $shingles = [];
-        $count = count($words);
-
-        for ($i = 0; $i <= $count - $k; $i++) {
-            $shingle = implode(' ', array_slice($words, $i, $k));
-            $shingles[] = $shingle;
-        }
-
-        return $shingles;
-    }
-
-    private function hammingDistance(string $hash1, string $hash2): int
-    {
-        $h1 = (int)$hash1;
-        $h2 = (int)$hash2;
-
-        $xor = $h1 ^ $h2;
-        $distance = 0;
-
-        while ($xor !== 0) {
-            $distance += $xor & 1;
-            $xor >>= 1;
-        }
-
-        return $distance;
-    }
-
     private function matchesSearch(NewsItemDto $item, array $searchTerms): bool
     {
         if ($searchTerms === []) {
@@ -433,54 +356,5 @@ final class CacheService implements CacheServiceInterface
         }
 
         return $count;
-    }
-
-    /**
-     * @param list<NewsItemDto> $news
-     * @return list<NewsItemDto>
-     */
-    private function deduplicate(array $news): array
-    {
-        if ($news === []) {
-            return [];
-        }
-
-        $deduplicated = [];
-        $seenHashes = [];
-        $seenTitles = [];
-
-        foreach ($news as $item) {
-            $titleNorm = $item->titleNorm;
-            if ($titleNorm === '') {
-                $titleNorm = $this->normalizeText($item->title);
-            }
-
-            if (isset($seenTitles[$titleNorm])) {
-                continue;
-            }
-
-            $simhash = $item->simhash;
-            if ($simhash === '') {
-                $simhash = $this->calculateSimhash($item->title . ' ' . $item->description);
-            }
-
-            $isDuplicate = false;
-            foreach ($seenHashes as $seenHash) {
-                if ($this->hammingDistance($simhash, $seenHash) <= 10) {
-                    $isDuplicate = true;
-                    break;
-                }
-            }
-
-            if ($isDuplicate) {
-                continue;
-            }
-
-            $seenTitles[$titleNorm] = true;
-            $seenHashes[] = $simhash;
-            $deduplicated[] = $item;
-        }
-
-        return $deduplicated;
     }
 }
