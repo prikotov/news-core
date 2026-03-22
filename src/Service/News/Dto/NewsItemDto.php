@@ -18,6 +18,8 @@ final readonly class NewsItemDto
         public string $source,
         public array $categories = [],
         public array $tags = [],
+        public string $simhash = '',
+        public string $titleNorm = '',
     ) {
     }
 }

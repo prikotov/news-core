@@ -15,6 +15,8 @@ final class CacheService implements CacheServiceInterface
 
     public function __construct(
         private readonly LoggerInterface $logger,
+        private readonly DeduplicationServiceInterface $deduplicationService,
+        private readonly TextHasher $textHasher,
         private readonly string $projectDir,
     ) {
     }
@@ -27,7 +29,6 @@ final class CacheService implements CacheServiceInterface
     public function store(array $news): int
     {
         $stored = 0;
-        $duplicates = 0;
 
         foreach ($news as $item) {
             $date = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $item->pubDate);
@@ -43,25 +44,14 @@ final class CacheService implements CacheServiceInterface
             $id = $this->generateId($item);
             $baseFilename = $date->format('Ymd-His') . '-' . $id;
 
-            $existingFiles = glob($sourceDateDir . '/*-' . $id . '.json');
-            if ($existingFiles !== [] && $this->isDuplicate($item, $sourceDateDir, $id)) {
-                $duplicates++;
-                continue;
-            }
-
-            if ($this->isSimilarExists($item, $sourceDateDir)) {
-                $duplicates++;
-                continue;
-            }
-
             $metaPath = $sourceDateDir . '/' . $baseFilename . '.json';
             $textPath = $sourceDateDir . '/' . $baseFilename . '.txt';
 
             $meta = [
                 'id' => $id,
                 'title' => $item->title,
-                'title_norm' => $this->normalizeText($item->title),
-                'simhash' => $this->calculateSimhash($item->title . ' ' . $item->description),
+                'title_norm' => $this->textHasher->normalizeText($item->title),
+                'simhash' => $this->textHasher->calculateSimhash($item->title . ' ' . $item->description),
                 'link' => $item->link,
                 'source' => $item->source,
                 'pubDate' => $item->pubDate,
@@ -75,7 +65,7 @@ final class CacheService implements CacheServiceInterface
             $stored++;
         }
 
-        $this->logger->info('News cached', ['stored' => $stored, 'duplicates' => $duplicates]);
+        $this->logger->info('News cached', ['stored' => $stored]);
 
         return $stored;
     }
@@ -121,7 +111,7 @@ final class CacheService implements CacheServiceInterface
                     continue;
                 }
 
-                /** @var array{title: string, link: string, pubDate: string, source: string, categories?: list<string>, tags?: list<string>} $meta */
+                /** @var array{title: string, link: string, pubDate: string, source: string, categories?: list<string>, tags?: list<string>, simhash?: string, title_norm?: string} $meta */
                 $meta = json_decode($content, true);
                 if (!is_array($meta)) {
                     continue;
@@ -147,6 +137,8 @@ final class CacheService implements CacheServiceInterface
                     source: $source,
                     categories: isset($meta['categories']) && is_array($meta['categories']) ? $meta['categories'] : [],
                     tags: isset($meta['tags']) && is_array($meta['tags']) ? $meta['tags'] : [],
+                    simhash: isset($meta['simhash']) && is_string($meta['simhash']) ? $meta['simhash'] : '',
+                    titleNorm: isset($meta['title_norm']) && is_string($meta['title_norm']) ? $meta['title_norm'] : '',
                 );
             }
         }
@@ -174,7 +166,7 @@ final class CacheService implements CacheServiceInterface
 
         usort($results, fn($a, $b) => strcmp($b->pubDate, $a->pubDate));
 
-        return $results;
+        return $this->deduplicationService->deduplicate($results);
     }
 
     public function getCacheStats(): array
@@ -296,133 +288,6 @@ final class CacheService implements CacheServiceInterface
     private function generateId(NewsItemDto $item): string
     {
         return substr(md5($item->link), 0, 8);
-    }
-
-    private function normalizeText(string $text): string
-    {
-        $text = mb_strtolower($text, 'UTF-8');
-        $text = preg_replace('/[^\p{L}\p{N}\s]/u', '', $text) ?? '';
-        $text = preg_replace('/\s+/', ' ', $text) ?? '';
-        return trim($text);
-    }
-
-    private function calculateSimhash(string $text): string
-    {
-        $normalized = $this->normalizeText($text);
-        $shingles = $this->getShingles($normalized, 3);
-
-        if ($shingles === []) {
-            return '0';
-        }
-
-        $v = array_fill(0, 64, 0);
-
-        foreach ($shingles as $shingle) {
-            $hash = md5($shingle, true);
-            $bits = unpack('N*', $hash);
-
-            for ($i = 0; $i < 64; $i++) {
-                $byteIndex = (int)floor($i / 8);
-                $bitIndex = $i % 8;
-                $byte = $bits[$byteIndex + 1] ?? 0;
-                $bit = ($byte >> (7 - $bitIndex)) & 1;
-                $v[$i] += $bit === 1 ? 1 : -1;
-            }
-        }
-
-        $simhash = 0;
-        for ($i = 0; $i < 64; $i++) {
-            if ($v[$i] > 0) {
-                $simhash |= (1 << (63 - $i));
-            }
-        }
-
-        return (string)$simhash;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function getShingles(string $text, int $k): array
-    {
-        $words = preg_split('/\s+/', $text);
-        if ($words === false || count($words) < $k) {
-            return [$text];
-        }
-
-        $shingles = [];
-        $count = count($words);
-
-        for ($i = 0; $i <= $count - $k; $i++) {
-            $shingle = implode(' ', array_slice($words, $i, $k));
-            $shingles[] = $shingle;
-        }
-
-        return $shingles;
-    }
-
-    private function hammingDistance(string $hash1, string $hash2): int
-    {
-        $h1 = (int)$hash1;
-        $h2 = (int)$hash2;
-
-        $xor = $h1 ^ $h2;
-        $distance = 0;
-
-        while ($xor !== 0) {
-            $distance += $xor & 1;
-            $xor >>= 1;
-        }
-
-        return $distance;
-    }
-
-    private function isDuplicate(NewsItemDto $item, string $sourceDateDir, string $id): bool
-    {
-        $existingFiles = glob($sourceDateDir . '/*-' . $id . '.json');
-        return $existingFiles !== [];
-    }
-
-    private function isSimilarExists(NewsItemDto $item, string $sourceDateDir): bool
-    {
-        $newSimhash = $this->calculateSimhash($item->title . ' ' . $item->description);
-        $newTitleNorm = $this->normalizeText($item->title);
-
-        $metaFiles = glob($sourceDateDir . '/*.json');
-        if ($metaFiles === false) {
-            return false;
-        }
-
-        foreach ($metaFiles as $metaFile) {
-            $content = file_get_contents($metaFile);
-            if ($content === false) {
-                continue;
-            }
-
-            /** @var array{title_norm?: string, simhash?: string}|null $meta */
-            $meta = json_decode($content, true);
-            if (!is_array($meta)) {
-                continue;
-            }
-
-            $existingTitleNorm = $meta['title_norm'] ?? '';
-            if ($existingTitleNorm === $newTitleNorm) {
-                return true;
-            }
-
-            $existingSimhash = $meta['simhash'] ?? '0';
-            if (!is_string($existingSimhash)) {
-                continue;
-            }
-
-            $distance = $this->hammingDistance($newSimhash, $existingSimhash);
-
-            if ($distance <= 10) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function matchesSearch(NewsItemDto $item, array $searchTerms): bool
