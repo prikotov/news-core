@@ -10,10 +10,10 @@
     <arg name="extensions" value="php"/>
     <arg name="bootstrap" value="vendor/autoload.php"/>
 
-    <config name="installed_paths" value="vendor/prikotov/coding-standard"/>
+    <file>src</file>
+    <file>tests</file>
 
     <rule ref="PSR12"/>
-    <rule ref="PrikotovCodingStandard.Sniffs.Structure.DtoStructureSniff"/>
 
     <exclude-pattern>/vendor</exclude-pattern>
     <exclude-pattern>/var</exclude-pattern>

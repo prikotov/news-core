@@ -133,7 +133,15 @@ XML;
 
         $this->expectException(InfrastructureException::class);
 
-        $this->parser->fetchFeed('https://example.com/rss', 'Test');
+        $previousHandler = set_error_handler(function (int $errno, string $errstr): bool {
+            return true;
+        });
+
+        try {
+            $this->parser->fetchFeed('https://example.com/rss', 'Test');
+        } finally {
+            restore_error_handler();
+        }
     }
 
     public function testFetchFeedHandlesEmptyFeed(): void
