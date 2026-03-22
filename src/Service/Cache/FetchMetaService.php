@@ -9,7 +9,7 @@ use Psr\Log\LoggerInterface;
 
 final class FetchMetaService
 {
-    private const META_FILE = 'data/news-rss/cache/fetch-meta.json';
+    private const META_DIR = 'data/news-rss/cache/fetch-meta';
     private const TTL_SECONDS = 600;
 
     public function __construct(
@@ -20,8 +20,7 @@ final class FetchMetaService
 
     public function needsFetch(string $source): bool
     {
-        $meta = $this->loadMeta();
-        $lastFetch = $meta[$source] ?? null;
+        $lastFetch = $this->loadMeta($source);
 
         if ($lastFetch === null) {
             return true;
@@ -40,52 +39,46 @@ final class FetchMetaService
 
     public function markFetched(string $source): void
     {
-        $meta = $this->loadMeta();
-        $meta[$source] = (new DateTimeImmutable())->format('Y-m-d H:i:s');
-        $this->saveMeta($meta);
+        $this->saveMeta($source, (new DateTimeImmutable())->format('Y-m-d H:i:s'));
 
         $this->logger->debug('Marked source as fetched', ['source' => $source]);
     }
 
-    /**
-     * @return array<string, string>
-     */
-    private function loadMeta(): array
+    private function loadMeta(string $source): ?string
     {
-        $filePath = $this->getMetaFilePath();
+        $filePath = $this->getMetaFilePath($source);
 
         if (!file_exists($filePath)) {
-            return [];
+            return null;
         }
 
         $content = file_get_contents($filePath);
         if ($content === false) {
-            return [];
+            return null;
         }
 
-        /** @var array<string, string> $meta */
+        /** @var array{lastFetchAt?: string} $meta */
         $meta = json_decode($content, true);
 
-        return is_array($meta) ? $meta : [];
+        return is_array($meta) && isset($meta['lastFetchAt']) ? $meta['lastFetchAt'] : null;
     }
 
-    /**
-     * @param array<string, string> $meta
-     */
-    private function saveMeta(array $meta): void
+    private function saveMeta(string $source, string $lastFetchAt): void
     {
-        $filePath = $this->getMetaFilePath();
+        $filePath = $this->getMetaFilePath($source);
         $dir = dirname($filePath);
 
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
 
+        $meta = ['lastFetchAt' => $lastFetchAt];
+
         file_put_contents($filePath, json_encode($meta, JSON_PRETTY_PRINT));
     }
 
-    private function getMetaFilePath(): string
+    private function getMetaFilePath(string $source): string
     {
-        return $this->projectDir . '/' . self::META_FILE;
+        return $this->projectDir . '/' . self::META_DIR . '/' . $source . '.json';
     }
 }
