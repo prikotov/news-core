@@ -27,7 +27,6 @@ final class CacheService implements CacheServiceInterface
     public function store(array $news): int
     {
         $stored = 0;
-        $duplicates = 0;
 
         foreach ($news as $item) {
             $date = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $item->pubDate);
@@ -42,17 +41,6 @@ final class CacheService implements CacheServiceInterface
 
             $id = $this->generateId($item);
             $baseFilename = $date->format('Ymd-His') . '-' . $id;
-
-            $existingFiles = glob($sourceDateDir . '/*-' . $id . '.json');
-            if ($existingFiles !== [] && $this->isDuplicate($item, $sourceDateDir, $id)) {
-                $duplicates++;
-                continue;
-            }
-
-            if ($this->isSimilarExists($item, $sourceDateDir)) {
-                $duplicates++;
-                continue;
-            }
 
             $metaPath = $sourceDateDir . '/' . $baseFilename . '.json';
             $textPath = $sourceDateDir . '/' . $baseFilename . '.txt';
@@ -75,7 +63,7 @@ final class CacheService implements CacheServiceInterface
             $stored++;
         }
 
-        $this->logger->info('News cached', ['stored' => $stored, 'duplicates' => $duplicates]);
+        $this->logger->info('News cached', ['stored' => $stored]);
 
         return $stored;
     }
@@ -121,7 +109,7 @@ final class CacheService implements CacheServiceInterface
                     continue;
                 }
 
-                /** @var array{title: string, link: string, pubDate: string, source: string, categories?: list<string>, tags?: list<string>} $meta */
+                /** @var array{title: string, link: string, pubDate: string, source: string, categories?: list<string>, tags?: list<string>, simhash?: string, title_norm?: string} $meta */
                 $meta = json_decode($content, true);
                 if (!is_array($meta)) {
                     continue;
@@ -147,6 +135,8 @@ final class CacheService implements CacheServiceInterface
                     source: $source,
                     categories: isset($meta['categories']) && is_array($meta['categories']) ? $meta['categories'] : [],
                     tags: isset($meta['tags']) && is_array($meta['tags']) ? $meta['tags'] : [],
+                    simhash: isset($meta['simhash']) && is_string($meta['simhash']) ? $meta['simhash'] : '',
+                    titleNorm: isset($meta['title_norm']) && is_string($meta['title_norm']) ? $meta['title_norm'] : '',
                 );
             }
         }
@@ -174,7 +164,7 @@ final class CacheService implements CacheServiceInterface
 
         usort($results, fn($a, $b) => strcmp($b->pubDate, $a->pubDate));
 
-        return $results;
+        return $this->deduplicate($results);
     }
 
     public function getCacheStats(): array
@@ -377,54 +367,6 @@ final class CacheService implements CacheServiceInterface
         return $distance;
     }
 
-    private function isDuplicate(NewsItemDto $item, string $sourceDateDir, string $id): bool
-    {
-        $existingFiles = glob($sourceDateDir . '/*-' . $id . '.json');
-        return $existingFiles !== [];
-    }
-
-    private function isSimilarExists(NewsItemDto $item, string $sourceDateDir): bool
-    {
-        $newSimhash = $this->calculateSimhash($item->title . ' ' . $item->description);
-        $newTitleNorm = $this->normalizeText($item->title);
-
-        $metaFiles = glob($sourceDateDir . '/*.json');
-        if ($metaFiles === false) {
-            return false;
-        }
-
-        foreach ($metaFiles as $metaFile) {
-            $content = file_get_contents($metaFile);
-            if ($content === false) {
-                continue;
-            }
-
-            /** @var array{title_norm?: string, simhash?: string}|null $meta */
-            $meta = json_decode($content, true);
-            if (!is_array($meta)) {
-                continue;
-            }
-
-            $existingTitleNorm = $meta['title_norm'] ?? '';
-            if ($existingTitleNorm === $newTitleNorm) {
-                return true;
-            }
-
-            $existingSimhash = $meta['simhash'] ?? '0';
-            if (!is_string($existingSimhash)) {
-                continue;
-            }
-
-            $distance = $this->hammingDistance($newSimhash, $existingSimhash);
-
-            if ($distance <= 10) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private function matchesSearch(NewsItemDto $item, array $searchTerms): bool
     {
         if ($searchTerms === []) {
@@ -491,5 +433,54 @@ final class CacheService implements CacheServiceInterface
         }
 
         return $count;
+    }
+
+    /**
+     * @param list<NewsItemDto> $news
+     * @return list<NewsItemDto>
+     */
+    private function deduplicate(array $news): array
+    {
+        if ($news === []) {
+            return [];
+        }
+
+        $deduplicated = [];
+        $seenHashes = [];
+        $seenTitles = [];
+
+        foreach ($news as $item) {
+            $titleNorm = $item->titleNorm;
+            if ($titleNorm === '') {
+                $titleNorm = $this->normalizeText($item->title);
+            }
+
+            if (isset($seenTitles[$titleNorm])) {
+                continue;
+            }
+
+            $simhash = $item->simhash;
+            if ($simhash === '') {
+                $simhash = $this->calculateSimhash($item->title . ' ' . $item->description);
+            }
+
+            $isDuplicate = false;
+            foreach ($seenHashes as $seenHash) {
+                if ($this->hammingDistance($simhash, $seenHash) <= 10) {
+                    $isDuplicate = true;
+                    break;
+                }
+            }
+
+            if ($isDuplicate) {
+                continue;
+            }
+
+            $seenTitles[$titleNorm] = true;
+            $seenHashes[] = $simhash;
+            $deduplicated[] = $item;
+        }
+
+        return $deduplicated;
     }
 }
