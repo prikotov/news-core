@@ -7,7 +7,9 @@ namespace News\Core\Command;
 use News\Core\Helper\OutputFormatTrait;
 use News\Core\Service\Cache\CacheServiceInterface;
 use News\Core\Service\News\Dto\NewsItemDto;
+use News\Core\Service\News\NewsServiceInterface;
 use Override;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
@@ -18,14 +20,16 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 #[AsCommand(
     name: 'news:search',
-    description: 'Search news in local cache',
+    description: 'Fetch news from RSS, cache and search',
 )]
 final class NewsSearchCommand extends Command
 {
     use OutputFormatTrait;
 
     public function __construct(
+        private readonly NewsServiceInterface $newsService,
         private readonly CacheServiceInterface $cacheService,
+        private readonly LoggerInterface $logger,
     ) {
         parent::__construct();
     }
@@ -71,6 +75,12 @@ final class NewsSearchCommand extends Command
                 InputOption::VALUE_OPTIONAL,
                 'Output format: text, json, csv, md',
                 'md',
+            )
+            ->addOption(
+                'no-fetch',
+                null,
+                InputOption::VALUE_NONE,
+                'Skip fetching from RSS, search only in cache',
             );
     }
 
@@ -90,6 +100,20 @@ final class NewsSearchCommand extends Command
         $limitValue = $input->getOption('limit');
         $limit = is_numeric($limitValue) ? (int)$limitValue : 50;
         $format = $this->getFormat($input);
+        $noFetch = (bool)$input->getOption('no-fetch');
+
+        if (!$noFetch) {
+            $output->writeln('<comment>Fetching news from RSS sources...</comment>');
+            $news = $this->newsService->fetchNews($sources);
+            $fetchedCount = count($news);
+
+            if ($fetchedCount === 0) {
+                $this->logger->warning('No news fetched from sources', ['sources' => $sources ?: 'all']);
+            } else {
+                $stored = $this->cacheService->store($news);
+                $output->writeln(sprintf('Fetched %d, stored %d new items', $fetchedCount, $stored));
+            }
+        }
 
         $results = $this->cacheService->search($queryTerms, $sources, $daysBack);
 
@@ -120,12 +144,12 @@ final class NewsSearchCommand extends Command
                 $format,
                 ['Date', 'Source', 'Category', 'Title', 'Link'],
                 $rows,
-                'Search Results'
+                $queryTerms !== [] ? 'Search Results' : 'News',
             );
         }
 
         return match ($format) {
-            'json' => $this->outputJson($output, $results),
+            'json' => $this->outputJson($output, $results, $queryTerms),
             default => $this->outputTable($output, $results),
         };
     }
@@ -181,8 +205,9 @@ final class NewsSearchCommand extends Command
 
     /**
      * @param list<NewsItemDto> $news
+     * @param list<string> $queryTerms
      */
-    private function outputJson(OutputInterface $output, array $news): int
+    private function outputJson(OutputInterface $output, array $news, array $queryTerms): int
     {
         $data = array_map(fn(NewsItemDto $item): array => [
             'title' => $item->title,
@@ -194,8 +219,12 @@ final class NewsSearchCommand extends Command
             'tags' => $item->tags,
         ], $news);
 
-        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        $output->writeln($json !== false ? $json : '[]');
+        $json = json_encode([
+            'query' => $queryTerms !== [] ? implode(' ', $queryTerms) : null,
+            'total' => count($news),
+            'items' => $data,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        $output->writeln($json !== false ? $json : '{}');
 
         return Command::SUCCESS;
     }

@@ -11,7 +11,7 @@ use Psr\Log\LoggerInterface;
 
 final class CacheService implements CacheServiceInterface
 {
-    private const CACHE_DIR = 'cache';
+    private const CACHE_DIR = 'data/news-rss';
 
     public function __construct(
         private readonly LoggerInterface $logger,
