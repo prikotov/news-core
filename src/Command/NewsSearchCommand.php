@@ -9,7 +9,6 @@ use News\Core\Service\Cache\CacheServiceInterface;
 use News\Core\Service\News\Dto\NewsItemDto;
 use News\Core\Service\News\NewsServiceInterface;
 use Override;
-use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
@@ -29,7 +28,6 @@ final class NewsSearchCommand extends Command
     public function __construct(
         private readonly NewsServiceInterface $newsService,
         private readonly CacheServiceInterface $cacheService,
-        private readonly LoggerInterface $logger,
     ) {
         parent::__construct();
     }
@@ -75,12 +73,6 @@ final class NewsSearchCommand extends Command
                 InputOption::VALUE_OPTIONAL,
                 'Output format: text, json, csv, md',
                 'md',
-            )
-            ->addOption(
-                'no-fetch',
-                null,
-                InputOption::VALUE_NONE,
-                'Skip fetching from RSS, search only in cache',
             );
     }
 
@@ -100,19 +92,10 @@ final class NewsSearchCommand extends Command
         $limitValue = $input->getOption('limit');
         $limit = is_numeric($limitValue) ? (int)$limitValue : 50;
         $format = $this->getFormat($input);
-        $noFetch = (bool)$input->getOption('no-fetch');
 
-        if (!$noFetch) {
-            $output->writeln('<comment>Fetching news from RSS sources...</comment>');
-            $news = $this->newsService->fetchNews($sources);
-            $fetchedCount = count($news);
-
-            if ($fetchedCount === 0) {
-                $this->logger->warning('No news fetched from sources', ['sources' => $sources ?: 'all']);
-            } else {
-                $stored = $this->cacheService->store($news);
-                $output->writeln(sprintf('Fetched %d, stored %d new items', $fetchedCount, $stored));
-            }
+        $news = $this->newsService->fetchNews($sources);
+        if (count($news) > 0) {
+            $this->cacheService->store($news);
         }
 
         $results = $this->cacheService->search($queryTerms, $sources, $daysBack);

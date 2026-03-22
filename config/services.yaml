@@ -32,6 +32,18 @@ services:
         resource: '../src/Command/*'
         tags: ['console.command']
 
+    News\Core\Service\News\NewsService:
+        class: News\Core\Service\News\NewsService
+
+    News\Core\Service\News\CachingNewsService:
+        decorates: News\Core\Service\News\NewsService
+        arguments:
+            - '@News\Core\Service\News\CachingNewsService.inner'
+            - '@News\Core\Service\Cache\CacheService'
+
+    News\Core\Service\News\NewsServiceInterface:
+        alias: News\Core\Service\News\CachingNewsService
+
     GuzzleHttp\Client:
         class: GuzzleHttp\Client
         arguments:
